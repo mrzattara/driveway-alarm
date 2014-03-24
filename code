@@ -1,0 +1,164 @@
+#include <Bridge.h>
+#include <YunServer.h>
+#include <YunClient.h>
+#include <Process.h>
+#include <Console.h>
+#include <Temboo.h>
+#include "TembooAccount.h"
+
+YunServer server;
+
+const String NEXMO_API_KEY = "xxxxx";   //enter your own here
+const String NEXMO_API_SECRET = "xxxx";//enter your own here
+const String PHONE_NUMBER = "xxxxxx";//enter your own here
+int alarmPin = 9; // the alrm in on pin 13
+const int speaker = 12; // speaker pin
+int numRuns = 0; // the number of times the sketch has been run
+int maxRuns = 1; // the number of times the sketch should run
+int alarmSound =0;
+int alarmState =0;
+int alarmInput;
+
+void setup(){
+  
+  Bridge.begin();
+  Console.begin();
+  while(!Console);
+  delay(1000);
+  Console.println("Connected to the console...");
+  server.listenOnLocalhost();
+  server.begin();
+  pinMode(alarmPin, INPUT);
+  pinMode(speaker, OUTPUT);
+  alarmPin =LOW;
+  delay(40000);
+
+
+        }
+
+void loop()
+{
+int alarmInput = digitalRead(alarmPin);
+Console.println(digitalRead (alarmPin));
+Console.println(alarmInput);
+Console.println(alarmState);
+
+  
+  YunClient client = server.accept();
+  
+  if (client) {
+    String command = client.readString();
+    command.trim();        //kill whitespace
+    Console.println(command);
+      
+    if (command == "digital/9/1") {    
+    digitalWrite(alarmPin, HIGH);
+     }
+     
+    else if (command == "alarmOn") {
+    digitalWrite(alarmPin, LOW);
+    alarmState=1;
+    alarmInput=0;
+     }
+     
+    else if (command == "alarmOff") {    
+    alarmSound =0;
+    alarmState=0;
+    alarmInput=0;
+    alarmPin=0;
+    numRuns =0;
+     }
+
+        client.stop();
+  }
+
+if (alarmInput== 1 && alarmState == 1) {
+
+
+                        if (numRuns < maxRuns) {
+
+                         if (makeNexmoCall() == 1) {
+                            digitalWrite(alarmPin, LOW);
+                            numRuns = 0; 
+                            delay(10000);
+                                } 
+                         
+                                 else {
+                                  delay(20000);
+                                  beep(200);                                              //beep intensity to be confirmed
+                                 alarmSound =1;
+                                }
+                                // increment the number of times the sketch has run
+                                numRuns++;
+                              }
+                              
+   
+
+      }
+ if (alarmSound == 1) {
+ Console.println("beeping\n");
+  beep(200);                                                                               //beep intensity to be confirmed
+  }   
+ delay(1000); 
+}//CLOSE LOOP
+
+
+/*
+Trigger a voice call via a Temboo Nexmo Choreo. Call the user, give them a menu of options
+and return the selection they make on their phone keypad as an integer. 
+*/
+int makeNexmoCall() {
+  int choice = 0;
+  
+  TembooChoreo CaptureTextToSpeechPromptChoreo;
+
+  // invoke the Temboo client
+  CaptureTextToSpeechPromptChoreo.begin();
+    
+  // set Temboo account credentials
+  CaptureTextToSpeechPromptChoreo.setAccountName(TEMBOO_ACCOUNT);
+  CaptureTextToSpeechPromptChoreo.setAppKeyName(TEMBOO_APP_KEY_NAME);
+  CaptureTextToSpeechPromptChoreo.setAppKey(TEMBOO_APP_KEY);
+    
+  // set choreo inputs
+  CaptureTextToSpeechPromptChoreo.addInput("Text", "Hello. Motion was detected on your driveway. Press one to deactivate the alarm. Press two to sound the alarm now!.");
+  CaptureTextToSpeechPromptChoreo.addInput("APIKey", NEXMO_API_KEY);
+  CaptureTextToSpeechPromptChoreo.addInput("APISecret", NEXMO_API_SECRET);
+  CaptureTextToSpeechPromptChoreo.addInput("To", PHONE_NUMBER);
+  CaptureTextToSpeechPromptChoreo.addInput("MaxDigits", "1");
+  CaptureTextToSpeechPromptChoreo.addInput("ByeText", "Ok, executing command now. Goodbye!");
+    
+  // identify choreo to run
+  CaptureTextToSpeechPromptChoreo.setChoreo("/Library/Nexmo/Voice/CaptureTextToSpeechPrompt");
+  
+  // add an output filter to return only the choice that the user makes from the phone menu
+  CaptureTextToSpeechPromptChoreo.addOutputFilter("choice", "/digits", "CallbackData");
+    
+  // run choreo
+  CaptureTextToSpeechPromptChoreo.run();
+  
+  // parse the results 
+  while(CaptureTextToSpeechPromptChoreo.available()) {
+    // read the name of the next output item
+    String name = CaptureTextToSpeechPromptChoreo.readStringUntil('\x1F');
+    name.trim(); // use “trim” to get rid of newlines
+
+    // read the value of the next output item
+    String data = CaptureTextToSpeechPromptChoreo.readStringUntil('\x1E');
+    data.trim(); // use “trim” to get rid of newlines
+    
+    // return the value of the choice that the user made from the phone menu
+    if (name == "choice") {
+      choice = data.toInt();
+    } 
+  }
+  return choice;
+}
+
+void beep(unsigned char delayms){
+  analogWrite(9, 20);      // Almost any value can be used except 0 and 255
+  delay(delayms);          // wait for a delayms ms
+  analogWrite(9, 0);       // 0 turns it off
+  delay(delayms);          // wait for a delayms ms   
+}  
+
